@@ -1,6 +1,9 @@
 package com.yarda.redis.controller;
 
+import com.yarda.redis.service.ISmsVerifyService;
 import org.springframework.web.bind.annotation.*;
+
+import javax.annotation.Resource;
 
 /**
  * 短信验证码 controller
@@ -8,26 +11,25 @@ import org.springframework.web.bind.annotation.*;
  * @date 2022/4/5-16:19
  */
 @RestController
-@RequestMapping("/sms/code")
+@RequestMapping("/sms/verifyCode")
 public class SmsVerifyCodeController {
+
+    @Resource
+    private ISmsVerifyService smsVerifyService;
 
     /**
      * 获取短信验证码
      */
     @GetMapping("/{phoneNumber}")
-    public void getSmsVerifyCode(@PathVariable("phoneNumber") String phoneNumber){
-        // 1.判断该手机号验证码发送已超限
-
-        // 2.发送验证码
-
-        // 3.保存验证码信息
+    public String sendSmsVerifyCode(@PathVariable("phoneNumber") String phoneNumber){
+        return smsVerifyService.sendSmsVerifyCode(phoneNumber);
     }
 
     /**
      * 校验短信验证码
      */
     @PostMapping("/verify")
-    public String getSmsVerifyCode(String phoneNumber, String verifyCode){
-        return null;
+    public String checkVerifyCode(String phoneNumber, String verifyCode){
+        return smsVerifyService.checkVerifyCode(phoneNumber, verifyCode);
     }
 }

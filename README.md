@@ -170,9 +170,13 @@ flushall：清空所有数据库中数据
 
 ## 四、Redis的数据类型
 
+官网数据类型介绍：https://redis.io/docs/manual/data-types/
+
+官网redis相关命令介绍：https://redis.io/commands/?group=list
+
 ### 1.String类型
 
-string是redis中最基本的数据类型，value不仅仅是string，也可以是数字。string类型是二进制安全的，redis的string可以包含任何数据，比如序列化的对象，图片二进制等
+string是redis中最基本的数据类型，value不仅仅是string，也可以是数字。string类型是二进制安全的，redis的string可以包含任何数据，比如序列化的对象，图片二进制等，字符串最大长度512M
 
 #### 1.String类型常用命令
 
@@ -201,7 +205,7 @@ decrby key decrement：按照指定减量自减
 
 ### 2.Hash类型
 
-Hash类型是string类型的field和value的映射表，可以看作具有key-value的Map容器，特别适合存储对象，相比而言，将一个对象类型存储在Hash比存储在string类型中占用更少的内存空间
+Hash类型是string类型的field和value的映射表，可以看作具有key-value的Map容器，特别适合存储对象，相比而言，将一个对象类型存储在Hash比存储在string类型中占用更少的内存空间，最多存储 2^32 - 1个键值对
 
 #### 1.Hash类型常用命令
 
@@ -215,7 +219,7 @@ hmget key field1 field2...：获取Hash中，多个field对应的value
 hgetall key：获取Hash中所有的field-value
 hkeys key：获取Hash中所有的键值
 hlen key：获取Hash的长度
-# 删除语法：
+# 删除语法
 del key：直接删除key对应的整个Hash类型
 hdel key field：删除Hash中某个field
 # 其他语法
@@ -236,6 +240,45 @@ hexists key field：查看Hash表中是否存在指定的字段field
 > 1.将用户id作为key，value为用户信息JSON，这种方式的缺点是：存取信息需要序列化/反序列化，并且不能只取单个字段、或修改单个字段（修改还可能存在线程安全问题）
 >
 > 2.将用户信息存储为多个string类型，使用用户id+字段名作为唯一标识获取对应属性值，虽然解决了序列化/反序列化以及并发安全问题，但是用户id重复存储，创建多个redisObject，浪费内存空间
+
+### 3.List类型
+
+List是简单的字符串列表，元素按插入顺序排序，在插入元素时可以指定将元素插入到链表的头部或尾部，列表最大长度2^32-1（超40亿元素）
+
+#### 1.List类型常用命令
+
+```
+# 赋值命令
+lpush key elements：从左侧向列表中添加数据，链表不存在时自动创建
+rpush key elements：从右侧向列表中添加数据，链表不存在时自动创建
+lpushx key elements：从左侧向列表中添加数据，链表不存在不执行任何操作
+rpushx key elements：从右侧向列表中添加数据，链表不存在不执行任何操作
+# 取值命令
+llen key：获取列表长度
+lindex key index：获取列表指定下标位置的元素
+lrange key start stop：获取指定index范围的所有元素，与java中不同，这返回的元素包含start和stop，范围不存时将返回空（start和stop可以为负数，表示距离列表末尾的偏移量，如-1表示最后一个元素）
+lpop key count：弹出列表左侧的count个元素（返回并删除）
+rpop key count：弹出列表有侧的count个元素（返回并删除）
+blpop keys timeout：依次检查keys中列表，从第一个非空列表弹出左侧第一个元素，如果所有列表为空时，阻塞等待timeout秒，0表示一直阻塞直到获取到元素（可实现消息队列）
+rlpop keys timeout：依次检查keys中列表，从第一个非空列表弹出右侧第一个元素，如果所有列表为空时，阻塞等待timeout秒，0表示一直阻塞直到获取到元素
+# 修改命令
+lset key index element：将列表下标为index的元素设置为element，index超出len范围将报错
+linsert key before|after pivot element：在列表中元素pivot之前或之后插入元素，当pivot有多个时匹配第一个，key存在不包含pivot时，返回-1，key不存在不进行任何操作
+# 删除命令
+del key：直接删除key对应的整个列表
+ltrim key start stop：将列表修剪到指定范围，包含start和stop（start和stop可以为负数，表示距离列表末尾的偏移量）
+# 其他命令
+lmove source destination left|right left|right：将列表1中左侧/右侧第一个元素，移动到列表2中最左侧/最右侧；如果列表1为空，不执行任何操作，如果列表1与列表2相同，则视为列表轮换
+blmove source destination left|right left|right timeout：lmove的block版，当列表1中没有元素时会阻塞等待timeout秒，0表示一直阻塞直到获取到元素
+```
+
+#### 2.List类型应用场景
+
+1.存储key-list型一对多的数据，例如关注列表、粉丝列表、人气榜单、热点新闻，使用命令lpush+ltrim+lrange命令，ltrim固定列表长度，lrange分页
+
+2.消息队列，使用命令rpush+lpop，rpush生产数据，lpop消费数据，还可使用blpop阻塞读取数据
+
+3.延迟队列，使用rpush+lpop，rpush生产数据时，消息内容增加一个delay时间，每次pop出来的数据检查是否到期
 
 ## 五、Spring集成redis客户端
 
@@ -308,18 +351,59 @@ public RedisTemplate<Object, Object> redisTemplate(RedisConnectionFactory redisC
 }
 ```
 
+redisTemplate<Object,Object>避免强制类型转换：
+
+```java
+public void testHashOps(){
+    HashOperations<String,String,String> hashOperations = redisTemplate.opsForHash();
+    // 新增、修改单个key
+    hashOperations.put("user:lisi", "username", "王五");
+    // 获取单个key对应的value
+    String username = hashOperations.get("user:lisi", "username");
+    System.out.println("username>>>>>>>>>>>>" + username);
+}
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 ## Redis使用案例
 
 ### 1.短信验证码
-
-需求
 
 ```
 1.验证码5分钟内有效
 2.同一手机号每小时只能发送3个验证码
 ```
 
+### 2.登录限制
 
+```
+1.五分钟内，密码输入错误5次，账户锁定20分钟
+```
 
 
 

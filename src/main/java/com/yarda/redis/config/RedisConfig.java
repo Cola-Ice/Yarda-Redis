@@ -22,8 +22,8 @@ public class RedisConfig {
      * 配置redisTemplate
      */
     @Bean
-    public RedisTemplate<String, Object> redisTemplate(RedisConnectionFactory redisConnectionFactory) {
-        RedisTemplate<String, Object> template = new RedisTemplate();
+    public RedisTemplate<Object, Object> redisTemplate(RedisConnectionFactory redisConnectionFactory) {
+        RedisTemplate<Object, Object> template = new RedisTemplate();
         template.setConnectionFactory(redisConnectionFactory);
         // 默认序列化是JDK，导致redis中数据不够直观
         Jackson2JsonRedisSerializer jackson2JsonRedisSerializer = new Jackson2JsonRedisSerializer(Object.class);
