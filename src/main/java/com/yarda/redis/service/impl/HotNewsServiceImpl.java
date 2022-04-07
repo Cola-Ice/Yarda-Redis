@@ -1,6 +1,7 @@
 package com.yarda.redis.service.impl;
 
 import com.yarda.redis.service.IHotNewsService;
+import org.springframework.data.redis.core.ListOperations;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 
@@ -16,7 +17,7 @@ import java.util.List;
 public class HotNewsServiceImpl implements IHotNewsService {
 
     @Resource
-    private RedisTemplate<Object,Object> redisTemplate;
+    private RedisTemplate<String,String> redisTemplate;
 
     /**
      * 添加热点新闻
@@ -25,7 +26,12 @@ public class HotNewsServiceImpl implements IHotNewsService {
      */
     @Override
     public String addHotNews(String news) {
-        return null;
+        Long hotNews = redisTemplate.opsForList().rightPush("hotNews", news);
+        // 控制热点新闻列表内容不超过30
+        if(hotNews > 30){
+            redisTemplate.opsForList().trim("hotNews", 0, 29);
+        }
+        return "success";
     }
 
     /**
@@ -36,6 +42,9 @@ public class HotNewsServiceImpl implements IHotNewsService {
      */
     @Override
     public List<String> getHotNewsList(Integer pageNum, Integer size) {
-        return null;
+        ListOperations<String, String> listOperations = redisTemplate.opsForList();
+        int start = (pageNum-1) * size;
+        int end = pageNum * size -1;
+        return listOperations.range("hotNews", start, end);
     }
 }
