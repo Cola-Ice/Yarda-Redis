@@ -393,7 +393,7 @@ del key：删除整个集合
 
 ### 5.ZSet类型
 
-redis中的ZSet是有序不可重复集合，相比set类型多了score值，用来代表排序的权重
+redis中的ZSet是有序不可重复集合，相比set类型多了score值，用来代表排序的权重，默认按照分数从小到大排序(分数相同先插入的在前边)
 
 > ZSet类型有序集合底层采用ziplist或跳跃表实现。当集合中元素数量超过128(默认值)，或新添加元素长度超过64(默认值)时，会使用跳跃表skiplist实现，否则使用压缩表ziplist作为有序集合的底层实现
 
@@ -405,14 +405,158 @@ redis中的ZSet是有序不可重复集合，相比set类型多了score值，用
 
 ```console
 # 赋值命令
-
+zadd key score member：添加成员，链表不存在时自动创建
+# 取值命令
+zcard key：返回有序集合成员个数
+zcount key min max：返回集合指定分数区间内的成员个数
+zrank key member：返回集合指定成员的索引index
+zrange key start stop：获取集合内指定index范围内的成员，分数从低到高
+zrangebyscore key min max：获取集合指定分数区间内的成员，分数从低到高
+zrevrange key start stop：获取集合内指定index范围内的成员，分数从高到低
+zrevrangebyscore key max min：获取集合指定分数区间内的成员，分数从高到底
+# 删除命令
+zrem key members：删除集合中的某个成员，可以删除多个
+zremrangebyrank key start stop：删除集合中指定index范围内的所有成员
+zremrangebyscore key min max：删除集合中指定分区区间内的所有成员
+del key：删除整个有序集合
+# 其他命令
+zincrby key increment member：增加指定成员的分数，返回值为更改后的分数
 ```
 
 #### 2.ZSet类型应用场景
 
+利用ZSet集合的积分排序，实现排行榜功能，例如销量排名、积分排名
+
+### 6.HperLogLogs类型
+
+Redis中的hperloglogs是用来做基数统计的算法，优点是计算基数所需的空间小、且固定，不随数据量上升而增加；缺点只能统计基数量
+
+> 实现原理：本质上基于string类型
+
+#### 1.HperLogLogs类型常用命令
+
+```console
+pfadd key elements：添加元素到hperloglogs
+pfcount key：返回给定hperloglogs基数估算值
+pfmerge destination sources：合并多个hperloglogs作为一个新的hperloglogs
+```
+
+#### 2.HperLogLogs类型应用场景
+
+HperLogLogs主要用作基数统计，例如，统计网站访问独立IP数，统计文章真实阅读数
+
+### 7.Bitmaps类型
+
+Redis中的Bitmaps提供了对位的操作：
+
+（1）Bitmaps本身不是一种数据类型，实际上就是字符串，但是它可以对字符串的位进行操作
+
+（2）Bitmaps单独提供了命令，可以把Bitmaps想象成一个以位为单位的数据，数组的每个单元只能存储0和1，数组的下标在Bitmaps中叫做偏移量
+
+#### 1.Bitmaps类型常用命令
+
+```console
+# 赋值命令
+setbit key offset 0|1：设置指定偏移量对应的值
+# 取值命令
+getbit key offset：获取指定偏移量的值
+```
+
+#### 2.Bitmaps类型应用场景
+
+当我们需要存储大量的Boolean类型0|1数据时，可以考虑用Bitmaps。例如存储用户每天是否打卡、存储网站一天活跃用户
+
+### 8.Geospatial类型
+
+Geospatial类型用于存放地理位置信息，将指定的地理位置信息（经度、维度、名称）添加到指定key中，redis底层会将这些数据将被保存到zset中，目的是对数据进行半径查询等操作。通过该类型提供的命令，可以方便实现周围的人、两地之间距离等功能
+
+## 五、Redis的高级功能
+
+### 1.Redis的发布订阅
+
+Redis发布订阅(pub/sub)是一种消息通信模式：发送者发送消息，订阅者接收消息。Redis客户端可以订阅任意数量的频道
+
+#### 1.Redis发布订阅命令
+
+```console
+# 订阅频道
+subscribe channels：订阅一个或多个频道
+# 发布频道
+publish channel message：将消息发送到指定的频道
+# 退订频道
+unsubscribe channels：退订指定的频道
+```
+
+### 2.Redis的事务
+
+Redis事务是一个单独的隔离操作：事务中的所有命令都会序列化、按顺序的执行，事务在执行过程中，不会被其他命令打断。Redis事务的主要作用将多个命令打包顺序执行
+
+#### 1.事务执行过程
+
+Redis中一个事务从开始到执行会经历 **开始事务** 、 **命令入队** 和 **执行事务** 三个阶段
+
+**开始事务：**使用 **multi** 命令开启事务，客户端从非事务状态切换到事务状态
+
+**命令入队：**当客户端处于非事务状态下， 所有发送给服务器端的命令都会立即执行，但当客户端进入事务状态后，服务器会将命令先放进一个事务队列，然后返回`QUEUED`，表示命令已入队
+
+**执行事务：**当服务器收到 **exec** 命令就会开始执行命令，或 **discard** 取消执行
+
+redis中事务相关的命令
+
+```console
+multi：开启事务
+exec：执行事务
+discard：取消事务
+watch key：监听一个或多个key，如果在事务执行之前这个key被其他命令改动，那么事务将被取消（监控一直延续到exec执行之后）
+unwath：取消watch命令对所有key的监听
+```
+
+#### 2.事务的错误处理
+
+入队过程某个命令报告错误，执行时队列中所有命令都会被取消
+
+执行过程某个命令执行失败，其他命令不会被取消（执行失败不回滚）
+
+#### 3.事务冲突处理
+
+事务冲突的处理可以选择悲观锁或乐观锁
+
+**悲观锁**
+
+悲观认为每次拿数据后都会出现数据修改，所以在拿数据时就会加锁，这样别的操作就只能block直到它释放锁，传统的关系型数据库里的行锁、表锁都是这种锁机制。适用于写多读少的场景
+
+**乐观锁**
+
+乐观认为每次拿数据后不会出现数据修改，所以不会上锁，等到更新的时候才回去判断数据是否被修改过（版本号）。适用于读多写少的场景。redis中的事务冲突就是通过乐观锁机制解决的
+
+**redis事务冲突处理**
+
+redis采用watch机制实现的乐观锁来解决事务冲突问题
+
+**watch key：**监听一个或多个key，如果在事务执行之前这个key被其他命令改动，那么事务将被取消
+
+#### 4.Redis事务三特性
+
+单独的隔离操作、没有隔离级别、不保证原子性
+
+```
+# 单独的隔离操作
+事务中所有命令都会序列化、按顺序执行，事务执行过程不会被其他命令打断
+# 没有隔离级别
+因为事务提交前任何指令都不会被实际执行
+# 不保证原子性
+事务中如果有一条命令执行失败，其他命令依然会执行，不会回滚
+```
+
+### 3.Redis的持久化
 
 
-## 五、Spring集成redis客户端
+
+### 4.Redis的主从复制
+
+
+
+## 六、Spring集成redis客户端
 
 ### 1.常用redis客户端介绍及对比
 
@@ -496,7 +640,7 @@ public void testHashOps(){
 }
 ```
 
-## Redis使用案例
+## 附录 Redis使用案例
 
 ### 1.短信验证码
 
@@ -535,9 +679,15 @@ public void testHashOps(){
 
 ### 6.随机抽奖
 
+```
+1.利用set集合的srandmember和spop随机抽奖
+```
 
+### 7.秒杀活动
 
-
+```
+1.利用redis中watch机制实现的乐观锁解决事务冲突
+```
 
 
 

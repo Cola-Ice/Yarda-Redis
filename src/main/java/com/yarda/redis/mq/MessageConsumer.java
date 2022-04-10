@@ -34,7 +34,7 @@ public class MessageConsumer implements InitializingBean {
                     // 消费消息
                     System.out.println("收到消息>>>>>>>>>>>>>>>" + message);
                 }else{
-                    System.out.println("未拉取到消息，等待中>>>>>>>>>>>");
+//                    System.out.println("未拉取到消息，等待中>>>>>>>>>>>");
                 }
             } catch (Exception e) {
                 System.out.println("消费消息时出现异常>>>>>>>>>>>>" + message + ";异常原因：" + e.getMessage());
