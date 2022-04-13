@@ -631,7 +631,7 @@ Append Only File，将服务器执行的每个写操作以追加的方式记录�
 
 ### 4.Redis的主从复制
 
-redis采用主从架构(master/slave)实现高可用，主节点以写为主，从节点默认只读
+redis提供了主从复制功能，主节点以写为主，从节点默认只读
 
 #### 1.Redis主从复制流程
 
@@ -652,13 +652,13 @@ redis采用主从架构(master/slave)实现高可用，主节点以写为主，�
 3.当无法进行增量同步时，从节点将请求全量同步（断开时间太久，环形缓冲区中命令已被覆盖，就只能全量同步）
 
 ```
-复制缓冲区：主库会给每个建立连接的客户端分配一个复制缓冲区，操作命令会先写入复制缓冲区再发送给从节点。当从库复制过慢导致主库的复制缓冲区达到先之后，主库就会强制断开从库的连接
+复制缓冲区：主库会给每个建立连接的从库分配一个复制缓冲区，操作命令会先写入复制缓冲区再发送给从库。当从库复制过慢导致主库的复制缓冲区达到限制后，主库就会强制断开从库的连接
 环形缓冲区：为了解决从库重新连接后找不到主从差异数据而设立的环形缓冲区，避免全量同步带来的性能开销，如果从库断开太久，环形缓冲区的命令会就覆盖
 ```
 
 #### 2.Redis主从复制基本特性
 
-1.redis主从复制过程是异步处理，在主节点是非阻塞的。客户端也可使用 **`wait`** 命令请求某些数据同步复制
+1.redis主从复制过程是异步处理，在主节点是非阻塞的。客户端也可使用 **`wait`** 命令请求某些数据同步复制（非强一致性）
 
 2.复制时从节点也有很程度是非阻塞的
 
@@ -676,42 +676,167 @@ redis采用主从架构(master/slave)实现高可用，主节点以写为主，�
 
 > 可以使用主从复制来避免让主节点将完整数据集写入磁盘，而在副本中开启备份(RDB)或启用AOF。需要注意，当这种情况下主节点没有开启持久化，不要开启自启动，可能造成数据丢失
 
+#### 4.搭建redis主从环境
+
+```console
+1.docker启动三个redis实例
+# 实例1
+docker run -p 6379:6379 --name redis1 --network redis-ms \
+-v /usr/local/docker/redis-ms/redis6379/redis.conf:/usr/local/etc/redis/redis.conf \
+-v /usr/local/docker/redis-ms/redis6379/data:/data \
+-d redis:6.2.5 redis-server /usr/local/etc/redis/redis.conf 
+# 实例2
+docker run -p 6380:6379 --name redis2 --network redis-ms \
+-v /usr/local/docker/redis-ms/redis6380/redis.conf:/usr/local/etc/redis/redis.conf \
+-v /usr/local/docker/redis-ms/redis6380/data:/data \
+-d redis:6.2.5 redis-server /usr/local/etc/redis/redis.conf 
+# 实例3
+docker run -p 6381:6379 --name redis3 --network redis-ms \
+-v /usr/local/docker/redis-ms/redis6381/redis.conf:/usr/local/etc/redis/redis.conf \
+-v /usr/local/docker/redis-ms/redis6381/data:/data \
+-d redis:6.2.5 redis-server /usr/local/etc/redis/redis.conf 
+2.从节点连接主节点
+slaveof redis1 6379 # 可配置在从节点的配置文件(永久)，从节点执行该命令(临时)
+```
+
+主从复制模型中，在主节点挂掉后，需要我们手动将从节点晋升为主节点
+
 ### 5.哨兵机制
 
-反客为主：当主节点挂掉，手动让从节点升为主节点；可以使用哨兵模式让从节点自动晋升为主节点
+Redis sentinel 哨兵机制，哨兵是Redis集群架构中一个重要组件，哨兵的出现解决了主从复制出现故障需要人为干预的问题，保证系统的高可用
 
+#### 1.哨兵的主要功能
 
+1.集群监控：负责监控Redis主从节点是否正常工作
+
+2.消息通知：当某个redis实例故障，哨兵负责发送报警通知给管理员
+
+3.故障转移：当master节点挂掉，哨兵负责从slave中选举出新的master
+
+4.配置中心：如果发生故障转移，通知client客户端新的master地址
+
+#### 2.集群监控
+
+1.哨兵机制建立了多个哨兵节点，共同监控Redis集群节点的运行状态（通常每个实例上都会再起一个哨兵进程）
+
+2.同时哨兵之间也会互相通信，交换低主从节点的监控状况
+
+3.每隔1s哨兵都会向整个集群中所有节点发送心跳（ping）（包含redis master/slave + 其他哨兵）
+
+#### 3.故障转移
+
+当超过半数的哨兵都认定主节点发生故障，就会发起投票，先选举出领头的哨兵（半数以上支持），由领头哨兵选举新的master节点，选举规则：
+
+1.首选排除已下线、或与master断开连接时间太长的slave
+
+2.优先级较高的slave优先作为master
+
+3.复制偏移量offset较大的优先作为master
+
+4.运行ID（run id）较小的优先作为master
 
 ## 六、Redis集群
 
+Redis 3.0中提供了无中心化集群配置，Redis cluster实现了 对redis服务的**水平扩容，故障切换**，**主从复制**，通过分片（插槽段）将整个数据库分布式存储在多个节点，解决了单个redis内存不足问题
+
+> 集群最少包含3个主节点
+
 ### 1.搭建redis集群
 
-1.docker启动三个redis实例
+集群规模：3主 + 3从（集群规模最小为3）
+
+1.docker启动6个redis实例
 
 ```
 # 实例1
-docker run -p 6379:6379 --name redis1 --network redis-cluster \
+docker run -p 6379:6379 -p 16379:16379 --name redis1 --network redis-cluster \
 -v /usr/local/docker/redis-cluster/redis6379/redis.conf:/usr/local/etc/redis/redis.conf \
 -v /usr/local/docker/redis-cluster/redis6379/data:/data \
 -d redis:6.2.5 redis-server /usr/local/etc/redis/redis.conf 
 # 实例2
-docker run -p 6380:6379 --name redis2 --network redis-cluster \
+docker run -p 6380:6379 -p 16380:16379 --name redis2 --network redis-cluster \
 -v /usr/local/docker/redis-cluster/redis6380/redis.conf:/usr/local/etc/redis/redis.conf \
 -v /usr/local/docker/redis-cluster/redis6380/data:/data \
 -d redis:6.2.5 redis-server /usr/local/etc/redis/redis.conf 
 # 实例3
-docker run -p 6381:6379 --name redis3 --network redis-cluster \
+docker run -p 6381:6379 -p 16381:16379 --name redis3 --network redis-cluster \
 -v /usr/local/docker/redis-cluster/redis6381/redis.conf:/usr/local/etc/redis/redis.conf \
 -v /usr/local/docker/redis-cluster/redis6381/data:/data \
 -d redis:6.2.5 redis-server /usr/local/etc/redis/redis.conf 
+# 实例4
+docker run -p 6389:6379 -p 16389:16379 --name redis4 --network redis-cluster \
+-v /usr/local/docker/redis-cluster/redis6389/redis.conf:/usr/local/etc/redis/redis.conf \
+-v /usr/local/docker/redis-cluster/redis6389/data:/data \
+-d redis:6.2.5 redis-server /usr/local/etc/redis/redis.conf 
+# 实例5
+docker run -p 6390:6379 -p 16390:16379 --name redis5 --network redis-cluster \
+-v /usr/local/docker/redis-cluster/redis6390/redis.conf:/usr/local/etc/redis/redis.conf \
+-v /usr/local/docker/redis-cluster/redis6390/data:/data \
+-d redis:6.2.5 redis-server /usr/local/etc/redis/redis.conf 
+# 实例6
+docker run -p 6391:6379 -p 16391:16379 --name redis6 --network redis-cluster \
+-v /usr/local/docker/redis-cluster/redis6391/redis.conf:/usr/local/etc/redis/redis.conf \
+-v /usr/local/docker/redis-cluster/redis6391/data:/data \
+-d redis:6.2.5 redis-server /usr/local/etc/redis/redis.conf 
 ```
 
-2.从节点连接主节点
+2.初始化集群
 
 ```
-# 可配置在从节点的配置文件(永久)，从节点执行该命令(临时)
-slaveof redis1 6379
+./redis-cli -a password --cluster create --cluster-replicas 1 ip:6379 ip:6380 \
+ip:6381 ip:6389 ip:6390 ip:6391
 ```
+
+3.查看集群节点信息
+
+```
+./redis-cli -c # 以集群方式连接
+cluster nodes # 查看集群节点信息
+```
+
+### 2.集群操作
+
+#### 1.散列槽(hash slot)
+
+Redis 集群包含16384（2^14）个散列槽，这些散列槽平均分配在主节点上，每个键都属于一个散列槽，集群通过公式计算键对应的槽
+
+> slot = CRC16(key) & 16383
+
+#### 2.MOVED重定向
+
+当Redis集群中的节点收到请求时，会先根据key计算对应的哈希槽，再根据哈希槽与节点的映射关系找到对应的节点，如果属于当前节点则执行指令，如果不属于当前节点则返回MOVED重定向错误给客户端，通知客户端重新请求正确的节点
+
+### 3.故障恢复
+
+1.当集群中某个主节点挂掉时，从节点会自动升为主节点，挂掉的主机重新启动后会作为从机运行
+
+2.当某一段槽的主从节点都挂掉时，可以通过配置文件指定此时集群是否可用
+
+> cluster-require-full-coverage no # 当某个槽挂掉时，挂掉的槽不可用，但集群可用
+
+### 4.重新分片
+
+Redis集群的重新分片是指将任意数量已经指派给某个节点的槽，改为指派给零一节点，且相关槽所属的键值对也会从原节点迁移到目标节点。重新分片可以在线进行，集群不需要下线
+
+> Redis集群的重新分片操作是由Redis的集群管理软件 `redis-trib`负责执行的
+
+### 5.Redis cluster 优缺点
+
+**优点：**
+
+1.水平扩容，解决单个redis实例内存不足问题
+
+2.提高并发量，读写分离
+
+3.无中心化配置，集群支持故障恢复、主从复制
+
+**缺点：**
+
+1.不支持多键操作
+
+2.不支持多键的Redis事务（多个key可能分布在不同的节点）
+
+3.Redis cluster方案出现晚，之前采用其他集群方案的需要整体迁移，复杂度大
 
 ## 七、Spring集成redis客户端
 
@@ -751,7 +876,7 @@ maven依赖
 </dependency>
 ```
 
-#### 序列化方式
+#### 1.序列化方式
 
 需要注意的是，当我们把Java中对象通过redisTemplate写入redis时，需要先进行序列化，redisTemplate中默认采用JDK的序列化方式（JdkSerializationRedisSerializer），该序列化方式存入redis中的数据不够直观，需要修改序列化方式
 
@@ -796,6 +921,10 @@ public void testHashOps(){
     System.out.println("username>>>>>>>>>>>>" + username);
 }
 ```
+
+#### 2.客户端连接 Redis cluster
+
+
 
 ## 附录 Redis使用案例
 
