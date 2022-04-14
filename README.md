@@ -754,27 +754,27 @@ docker run -p 6379:6379 -p 16379:16379 --name redis1 --network redis-cluster \
 -v /usr/local/docker/redis-cluster/redis6379/data:/data \
 -d redis:6.2.5 redis-server /usr/local/etc/redis/redis.conf 
 # 实例2
-docker run -p 6380:6379 -p 16380:16379 --name redis2 --network redis-cluster \
+docker run -p 6380:6380 -p 16380:16380 --name redis2 --network redis-cluster \
 -v /usr/local/docker/redis-cluster/redis6380/redis.conf:/usr/local/etc/redis/redis.conf \
 -v /usr/local/docker/redis-cluster/redis6380/data:/data \
 -d redis:6.2.5 redis-server /usr/local/etc/redis/redis.conf 
 # 实例3
-docker run -p 6381:6379 -p 16381:16379 --name redis3 --network redis-cluster \
+docker run -p 6381:6381 -p 16381:16381 --name redis3 --network redis-cluster \
 -v /usr/local/docker/redis-cluster/redis6381/redis.conf:/usr/local/etc/redis/redis.conf \
 -v /usr/local/docker/redis-cluster/redis6381/data:/data \
 -d redis:6.2.5 redis-server /usr/local/etc/redis/redis.conf 
 # 实例4
-docker run -p 6389:6379 -p 16389:16379 --name redis4 --network redis-cluster \
+docker run -p 6389:6389 -p 16389:16389 --name redis4 --network redis-cluster \
 -v /usr/local/docker/redis-cluster/redis6389/redis.conf:/usr/local/etc/redis/redis.conf \
 -v /usr/local/docker/redis-cluster/redis6389/data:/data \
 -d redis:6.2.5 redis-server /usr/local/etc/redis/redis.conf 
 # 实例5
-docker run -p 6390:6379 -p 16390:16379 --name redis5 --network redis-cluster \
+docker run -p 6390:6390 -p 16390:16390 --name redis5 --network redis-cluster \
 -v /usr/local/docker/redis-cluster/redis6390/redis.conf:/usr/local/etc/redis/redis.conf \
 -v /usr/local/docker/redis-cluster/redis6390/data:/data \
 -d redis:6.2.5 redis-server /usr/local/etc/redis/redis.conf 
 # 实例6
-docker run -p 6391:6379 -p 16391:16379 --name redis6 --network redis-cluster \
+docker run -p 6391:6391 -p 16391:16391 --name redis6 --network redis-cluster \
 -v /usr/local/docker/redis-cluster/redis6391/redis.conf:/usr/local/etc/redis/redis.conf \
 -v /usr/local/docker/redis-cluster/redis6391/data:/data \
 -d redis:6.2.5 redis-server /usr/local/etc/redis/redis.conf 
@@ -832,9 +832,9 @@ Redis集群的重新分片是指将任意数量已经指派给某个节点的槽
 
 **缺点：**
 
-1.不支持多键操作
+1.不支持多键操作（keys 也只能查看当前节点的数据）
 
-2.不支持多键的Redis事务（多个key可能分布在不同的节点）
+2.不支持多键的Redis事务（事务执行过程不能有服务器切换，多个key可能分布在不同的散列槽）
 
 3.Redis cluster方案出现晚，之前采用其他集群方案的需要整体迁移，复杂度大
 
@@ -922,9 +922,105 @@ public void testHashOps(){
 }
 ```
 
-#### 2.客户端连接 Redis cluster
+#### 2.连接 Redis cluster
 
+```yaml
+spring:
+  redis:
+    cluster:
+      nodes: xxx.xxx.x.xx:6379,xxx.xxx.x.xx:6380,xxx.xxx.x.xx:6381,xxx.xxx.x.xx:6389,xxx.xxx.x.xx:6390,xxx.xxx.x.xx:6391
+      max-redirects: 3 # 最大转发次数
+    password: xxxxxx # redis密码
+    database: 0 # 库名
+    client-type: lettuce # 2.x版本后，默认就是lettuce
+    lettuce: # lettuce相关配置
+      pool:
+        enabled: true
+        max-active: 8
+        max-idle: 8
+        max-wait: 1ms
+        min-idle: 2
+```
 
+## 八、Redis实战
+
+### 1.缓存穿透
+
+**问题描述：**访问一个缓存和数据库都不存在的key，此时会直接打到数据库，并且差不到数据，没法写缓存，所以下次同样会打到数据库。此时，缓存起不到作用，请求每次都会走到数据库，流量大时数据库可能会被打挂
+
+**解决方案：**
+
+1.缓存空值。当访问缓存和DB都没有值时，可以将空值写进缓存，但设置较短的过期时间
+
+2.接口校验。增加用户鉴权、数据合法性校验。缓存穿透场景最大的可能性是遭到非法攻击
+
+3.布隆过滤器。使用布隆过滤器存储所有可能访问的key，不存在key直接被过滤，存在的key则再进一步查询缓存和数据库
+
+> 布隆过滤器：由一个很长的二进制向量和一系列哈希函数组成。主要用于判断一个元素是否存在于某个集合中。通过元素哈希函数转换再经过一系列计算，最终计算出多个下标，添加元素时，将所有下标的值修改为1，查询元素时，判断元素对应所有下标值是否为1
+>
+> 优点：占用空间小，性能高
+>
+> 缺点：存在一定的误判；不能删除布隆过滤器里的元素
+
+![image_16499283893703](https://github.com/Cola-Ice/Yarda-Redis/raw/master/doc/image/image_16499283893703.png)
+
+### 2.缓存击穿
+
+**问题描述：**当某个热点key，在缓存过期的一瞬间，同时有大量的请求打进来，由于此时缓存过期，所有请求最终都会打到数据库，造成数据库瞬间访问压力大增，甚至可能打垮数据库
+
+**解决方案：**
+
+1.热点数据不过期
+
+2.加互斥锁。在多个并发请求中，只有第一个能拿到锁并执行数据库查询，其他线程阻塞等待，等第一个线程执行完，直接走缓存即可
+
+### 3.缓存雪崩
+
+**问题描述：**大量的热点key在同一时刻全部失效，造成数据库瞬间访问压力大增，引起雪崩，甚至导致数据库被打挂
+
+**解决方案：**
+
+1.过期时间打散。过期时间加上一个随机值，避免集中失效
+
+2.热点数据不过期
+
+3.加互斥锁。对于同一key，在多个并发请求中，只有第一个能拿到锁并执行数据库查询，其他线程阻塞等待，等第一个线程执行完，直接走缓存即可
+
+### 4.分布式锁
+
+分布式锁是解决分布式系统在并发场景下，多个线程访问同一资源时出现的并发数据安全问题
+
+**分布式锁应具备的条件：**
+
+1.互斥性，在分布式系统环境下，同一方法在同一时间只能被一个机器的一个线程执行；
+
+2.高可用的获取锁和释放锁
+
+3.高性能的获取锁和释放锁
+
+4.具备可重入特性
+
+5.具备锁失效机制，防止死锁
+
+**Redis实现分布式锁的优缺点：**
+
+优点：性能高，可解决失效死锁问题
+
+缺点：实现较复杂，可靠性不如zookeeper（主从异步复制，可能造成上锁数据丢失）
+
+> Redlock红锁：antirez提出的新的分布式锁的算法Redlock，基于N个完全独立的Redis节点（通常N可设置5）
+
+**Redis实现分布式锁：**
+
+1.使用setnx命令上锁，del释放锁
+
+> SET lock 1 EX 10 NX
+
+2.锁失效机制：可以设置预估的过期时间，更可靠的方式是锁续期（redisson使用watchDog实现锁续期）
+
+3.可重入实现、防止释放别人的锁：加入唯一标识，判断是否当前客户端持有锁
+
+5.
 
 ## 附录 Redis使用案例
 

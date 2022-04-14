@@ -1,8 +1,11 @@
 # 使用spring boot redis starter
 spring:
   redis:
-    host: xxx.xxx.xx.xxx # redis地址
-    port: 6379  # redis端口
+#    host: xxx.xxx.xx.xxx # redis地址
+#    port: 6379  # redis端口
+    cluster:
+      nodes: xxx.xxx.xx.xxx:6379,xxx.xxx.xx.xxx:6380,xxx.xxx.xx.xxx:6381,xxx.xxx.xx.xxx:6389,xxx.xxx.xx.xxx:6390,xxx.xxx.xx.xxx:6391
+      max-redirects: 3 # 最大转发次数
     password: xxxxxx # redis密码
     database: 0 # 库名
     client-type: lettuce # 2.x版本后，默认就是lettuce
@@ -13,8 +16,8 @@ spring:
         max-idle: 8
         max-wait: 1ms
         min-idle: 2
-    jedis:  # jedis相关配置
-      pool:
-        max-active: 8 # 最大连接数
-        max-idle: 8 # 最大空闲连接数
-        min-idle: 2 # 最小空闲连接数
+#    jedis:  # jedis相关配置
+#      pool:
+#        max-active: 8 # 最大连接数
+#        max-idle: 8 # 最大空闲连接数
+#        min-idle: 2 # 最小空闲连接数

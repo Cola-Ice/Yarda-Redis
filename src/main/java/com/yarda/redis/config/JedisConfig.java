@@ -11,7 +11,7 @@ import redis.clients.jedis.JedisPoolConfig;
  * @author xuezheng
  * @date 2022/4/3-20:16
  */
-@Configuration
+//@Configuration
 public class JedisConfig {
 
     /**

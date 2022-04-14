@@ -11,8 +11,8 @@ import org.springframework.context.annotation.Configuration;
  * @date 2022/4/3-20:17
  */
 @Data
-@Configuration
-@ConfigurationProperties("spring.redis")
+//@Configuration
+//@ConfigurationProperties("spring.redis")
 public class RedisProperties {
     private String host;
     private Integer port;
