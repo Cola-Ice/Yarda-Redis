@@ -1008,7 +1008,7 @@ spring:
 
 缺点：实现较复杂，可靠性不如zookeeper（主从异步复制，可能造成上锁数据丢失）
 
-> Redlock红锁：antirez提出的新的分布式锁的算法Redlock，基于N个完全独立的Redis节点（通常N可设置5）
+> Redlock红锁：antirez提出的新的分布式锁的算法Redlock，基于N个完全独立的Redis节点（通常N设置5）
 
 **Redis实现分布式锁：**
 
